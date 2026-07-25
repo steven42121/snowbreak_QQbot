@@ -9,8 +9,8 @@ NapCat.Shell/native/
 NapCat.Shell/worker/
 NapCat.Shell/static/
 
-# Zip files
-*.zip
+# Zip files (允许插件zip)
+# *.zip
 
 # OS files
 Thumbs.db

@@ -1,5 +1,5 @@
 """
-群聊工具集插件
+尘白禁区QQ机器人
 功能：定时提醒、JM漫画下载、社区内容过滤、群管理
 """
 import asyncio
@@ -327,7 +327,7 @@ download:
             yield event.plain_result("\n".join(lines[:50]))  # 限制50行
         else:
             yield event.plain_result(
-                "【群聊工具集】\n"
+                "【尘白禁区QQ机器人】\n"
                 "/jm <ID> - 下载漫画\n"
                 "/jmhelp - 下载帮助\n"
                 "/addfilter <词> - 添加过滤词\n"
@@ -336,6 +336,8 @@ download:
                 "/listtask - 查看定时任务\n"
                 "/addtask <周几/每天> <时间> <内容> - 添加任务\n"
                 "/deltask <编号> - 删除任务\n"
+                "/unlock <QQ号> - 解除禁言\n"
+                "/violations - 查看违规记录\n"
                 "/helpgroup - 本帮助"
             )
 
