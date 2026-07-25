@@ -259,7 +259,7 @@ download:
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def content_filter(self, event: AstrMessageEvent):
-        """社区内容过滤器"""
+        """社区内容过滤器 + 群管理"""
         if not self.config.get("enable_filter", True):
             return
         message_str = event.message_str
@@ -270,6 +270,14 @@ download:
                 yield event.plain_result("检测到不当内容，已被过滤")
                 event.stop_event()
                 return
+
+        # 群管理：检测进群事件
+        if self.enable_group_management:
+            raw = event.message_obj.raw_message
+            if raw and raw.get("post_type") == "notice":
+                notice_type = raw.get("notice_type")
+                if notice_type == "group_increase":
+                    await self._on_member_increase(event)
 
     @filter.command("addfilter")
     async def add_filter_word(self, event: AstrMessageEvent):
@@ -425,23 +433,6 @@ download:
         else:
             yield event.plain_result("编号不存在")
 
-    @filter.event_message_type(filter.EventMessageType.GROUP_MEMBER_INCREASE)
-    async def on_member_increase(self, event: AstrMessageEvent):
-        """新成员进群事件"""
-        if not self.enable_group_management or not self.enable_uid_verify:
-            return
-
-        user_id = event.message_obj.sender.id
-        group_id = event.message_obj.group_id
-
-        # 禁言新人
-        await self.group_management.mute_user(event.platform, group_id, user_id, 0)
-        yield event.plain_result(
-            f"欢迎新成员 {user_id}！\n"
-            "请发送UID截图进行验证（游戏内个人资料截图）\n"
-            "验证通过后将自动解除禁言"
-        )
-
     @filter.command("unlock")
     async def unlock_user(self, event: AstrMessageEvent):
         """解除禁言（管理员）"""
@@ -568,6 +559,23 @@ download:
                 yield event.plain_result(f"检测到敏感内容，已全体禁言12小时（违规{count}次）")
             else:
                 yield event.plain_result("检测到敏感内容，请注意群规")
+
+    async def _on_member_increase(self, event: AstrMessageEvent):
+        """处理新成员进群事件"""
+        if not self.enable_uid_verify:
+            return
+
+        raw = event.message_obj.raw_message
+        user_id = str(raw.get("user_id"))
+        group_id = str(raw.get("group_id"))
+
+        # 禁言新人
+        await self.group_management.mute_user(event.platform, group_id, int(user_id), 0)
+        await event.send(event.plain_result(
+            f"欢迎新成员！\n"
+            "请发送UID截图进行验证（游戏内个人资料截图）\n"
+            "验证通过后将自动解除禁言"
+        ))
 
     def _is_admin(self, platform, group_id: int, user_id: int) -> bool:
         """检查是否为管理员"""
