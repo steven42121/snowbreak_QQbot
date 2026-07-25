@@ -22,5 +22,29 @@
     "type": "string",
     "default": "",
     "hint": "留空则使用默认目录（插件data目录下的jm_downloads）"
+  },
+  "enable_group_management": {
+    "description": "启用群管理功能",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后将启用进群禁言、UID验证、敏感内容检测等功能"
+  },
+  "enable_uid_verify": {
+    "description": "启用UID截图验证",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后新成员需要发送UID截图进行验证"
+  },
+  "enable_content_moderation": {
+    "description": "启用敏感内容检测",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后将使用关键词+AI检测敏感内容"
+  },
+  "moderation_keywords": {
+    "description": "敏感内容关键词列表",
+    "type": "list",
+    "default": ["黄", "色", "代", "练", "外挂", "代打", "卖号", "QQ群", "加群"],
+    "hint": "包含这些关键词的消息将触发AI二次判断"
   }
 }

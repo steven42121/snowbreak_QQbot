@@ -1,7 +1,7 @@
 name: astrbot_plugin_group_utils
-desc: 群聊工具集：定时提醒、JM漫画下载、社区内容过滤
+desc: 群聊工具集：定时提醒、JM漫画下载、社区内容过滤、群管理
 author: GroupUtils
-version: 1.0.0
+version: 1.1.0
 support_platforms:
   - aiocqhttp
   - qq_official

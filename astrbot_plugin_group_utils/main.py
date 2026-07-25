@@ -1,6 +1,6 @@
 """
 群聊工具集插件
-功能：定时提醒、JM漫画下载、社区内容过滤
+功能：定时提醒、JM漫画下载、社区内容过滤、群管理
 """
 import asyncio
 import os
@@ -17,6 +17,10 @@ from astrbot.api.star import Context, Star
 from astrbot.api import logger, AstrBotConfig
 import astrbot.api.message_components as Comp
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+
+from group_management import GroupManagement
+from verify import UIDVerifier
+from content_moderation import ContentModerator
 
 
 class GroupUtilsPlugin(Star):
@@ -39,6 +43,14 @@ class GroupUtilsPlugin(Star):
             "脑残", "智障", "白痴", "废物", "垃圾游戏"
         ])
 
+        # 群管理相关配置
+        self.enable_group_management = config.get("enable_group_management", True)
+        self.enable_uid_verify = config.get("enable_uid_verify", True)
+        self.enable_content_moderation = config.get("enable_content_moderation", True)
+        self.moderation_keywords = config.get("moderation_keywords", [
+            "黄", "色", "代", "练", "外挂", "代打", "卖号", "QQ群", "加群"
+        ])
+
         # 定时任务配置
         self.schedule_tasks = [
             {"day": 0, "hour": 10, "minute": 0, "msg": "【尘白每周提醒】新一周开始了！记得查看尘白每周商店更新和新活动～"},
@@ -51,6 +63,20 @@ class GroupUtilsPlugin(Star):
     async def on_load(self):
         logger.info("群聊工具集插件已加载")
         self.scheduler_task = asyncio.create_task(self._scheduler_loop())
+
+        # 初始化群管理模块
+        self.group_management = GroupManagement()
+        self.uid_verifier = UIDVerifier()
+        self.content_moderator = ContentModerator()
+
+        # 尝试设置LLM提供者
+        try:
+            provider = self.context.get_using_provider()
+            if provider:
+                self.content_moderator.set_llm_provider(provider)
+                logger.info("已设置LLM提供者用于内容审核")
+        except Exception as e:
+            logger.warning(f"设置LLM提供者失败: {e}")
 
     async def terminate(self):
         if self.scheduler_task:
@@ -396,3 +422,163 @@ download:
             yield event.plain_result(f"已删除：[{day} {removed['hour']:02d}:{removed['minute']:02d}] {removed['msg'][:30]}...")
         else:
             yield event.plain_result("编号不存在")
+
+    @filter.event_message_type(filter.EventMessageType.GROUP_MEMBER_INCREASE)
+    async def on_member_increase(self, event: AstrMessageEvent):
+        """新成员进群事件"""
+        if not self.enable_group_management or not self.enable_uid_verify:
+            return
+
+        user_id = event.message_obj.sender.id
+        group_id = event.message_obj.group_id
+
+        # 禁言新人
+        await self.group_management.mute_user(event.platform, group_id, user_id, 0)
+        yield event.plain_result(
+            f"欢迎新成员 {user_id}！\n"
+            "请发送UID截图进行验证（游戏内个人资料截图）\n"
+            "验证通过后将自动解除禁言"
+        )
+
+    @filter.command("unlock")
+    async def unlock_user(self, event: AstrMessageEvent):
+        """解除禁言（管理员）"""
+        parts = event.message_str.strip().split()
+        if len(parts) < 2:
+            yield event.plain_result("用法：/unlock <QQ号>")
+            return
+
+        user_id = int(parts[1])
+        group_id = event.message_obj.group_id
+
+        # 检查权限
+        if not self._is_admin(event.platform, group_id, event.message_obj.sender.id):
+            yield event.plain_result("只有管理员可以执行此操作")
+            return
+
+        success = await self.group_management.unmute_user(event.platform, group_id, user_id)
+        if success:
+            self.group_management.mark_verified(group_id, user_id)
+            yield event.plain_result(f"已解除用户 {user_id} 的禁言")
+        else:
+            yield event.plain_result("解除禁言失败")
+
+    @filter.command("violations")
+    async def show_violations(self, event: AstrMessageEvent):
+        """查看违规记录"""
+        group_id = event.message_obj.group_id
+        violations = self.group_management.violations
+
+        if not violations:
+            yield event.plain_result("当前没有违规记录")
+            return
+
+        lines = ["【违规记录】"]
+        for key, data in violations.items():
+            if key.startswith(f"{group_id}:"):
+                user_id = key.split(":")[1]
+                count = data["count"]
+                lines.append(f"QQ {user_id}: {count}次违规")
+
+        yield event.plain_result("\n".join(lines))
+
+    @filter.event_message_type(filter.EventMessageType.ALL)
+    async def screenshot_verify(self, event: AstrMessageEvent):
+        """截图验证"""
+        if not self.enable_group_management or not self.enable_uid_verify:
+            return
+
+        group_id = event.message_obj.group_id
+        user_id = event.message_obj.sender.id
+
+        # 检查是否已验证
+        if self.group_management.is_verified(group_id, user_id):
+            return
+
+        # 获取消息中的图片
+        images = event.message_obj.message
+        if not images:
+            return
+
+        for comp in images:
+            if hasattr(comp, 'url') and comp.url:
+                # OCR识别UID
+                text = await self.uid_verifier.recognize_image(comp.url)
+                uid = self.uid_verifier.extract_uid(text)
+
+                if uid:
+                    result = self.uid_verifier.validate_uid(uid)
+
+                    if result["type"] == "normal":
+                        # 解除禁言
+                        await self.group_management.unmute_user(event.platform, group_id, user_id)
+                        self.group_management.mark_verified(group_id, user_id)
+                        yield event.plain_result(f"UID {uid} 验证通过，已解除禁言")
+
+                    elif result["type"] == "new_account":
+                        # 标记待审核
+                        self.group_management.mark_pending_review(group_id, user_id, uid)
+                        yield event.plain_result(
+                            f"UID {uid} 验证通过，但这是新号（UID 400-1000万）\n"
+                            "已通知管理员进行审核"
+                        )
+
+                    else:
+                        yield event.plain_result("UID无效，新注册QQ号需联系管理员")
+
+                    break
+                else:
+                    yield event.plain_result("未识别到有效UID，请重新截图")
+
+    @filter.event_message_type(filter.EventMessageType.ALL)
+    async def content_moderation(self, event: AstrMessageEvent):
+        """敏感内容检测"""
+        if not self.enable_group_management or not self.enable_content_moderation:
+            return
+
+        message_str = event.message_str
+        if not message_str:
+            return
+
+        result = await self.content_moderator.check_content(
+            message_str,
+            self.moderation_keywords
+        )
+
+        if not result["safe"]:
+            group_id = event.message_obj.group_id
+            user_id = event.message_obj.sender.id
+
+            # 记录违规
+            self.group_management.record_violation(group_id, user_id, result["reason"])
+
+            # 获取违规次数
+            count = self.group_management.get_violation_count(group_id, user_id)
+
+            if count >= 3:
+                # 永久禁言+踢出
+                await self.group_management.mute_user(event.platform, group_id, user_id, 0)
+                await self.group_management.kick_user(event.platform, group_id, user_id)
+                yield event.plain_result(f"用户 {user_id} 累计违规{count}次，已永久禁言并踢出")
+            elif count >= 1:
+                # 全体禁言12小时
+                await self.group_management.global_mute(event.platform, group_id, 43200)
+                yield event.plain_result(f"检测到敏感内容，已全体禁言12小时（违规{count}次）")
+            else:
+                yield event.plain_result("检测到敏感内容，请注意群规")
+
+    def _is_admin(self, platform, group_id: int, user_id: int) -> bool:
+        """检查是否为管理员"""
+        try:
+            client = platform.get_client()
+            member_list = asyncio.run_coroutine_threadsafe(
+                client.api.call_action('get_group_member_list', group_id=group_id),
+                asyncio.get_event_loop()
+            ).result(timeout=10)
+
+            for member in member_list:
+                if member['user_id'] == user_id:
+                    return member['role'] in ['admin', 'owner']
+        except Exception as e:
+            logger.error(f"检查管理员权限失败: {e}")
+        return False
