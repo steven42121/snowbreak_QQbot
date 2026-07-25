@@ -18,9 +18,9 @@ from astrbot.api import logger, AstrBotConfig
 import astrbot.api.message_components as Comp
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-from group_management import GroupManagement
-from verify import UIDVerifier
-from content_moderation import ContentModerator
+from .group_management import GroupManagement
+from .verify import UIDVerifier
+from .content_moderation import ContentModerator
 
 
 class GroupUtilsPlugin(Star):
