@@ -1,0 +1,270 @@
+                    GNU AFFERO GENERAL PUBLIC LICENSE
+                       Version 3, 19 November 2007
+
+ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+                            Preamble
+
+  The GNU Affero General Public License is a free, copyleft license for
+software and other kinds of works, specifically designed to ensure
+cooperation with the community in the case of network server software.
+
+  For developers' and lawyers' understanding, the AGPL adds one
+requirement to the GNU GPL: when a modified version is used to provide a
+service over a network, the source code of the modified version must be
+made available.
+
+  The full text of the AGPL is below.
+
+-----------------------------------------------------------------------
+
+GNU AFFERO GENERAL PUBLIC LICENSE
+   Version 3, 19 November 2006
+
+Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+Everyone is permitted to copy and distribute verbatim copies
+of this license document, but changing it is not allowed.
+
+Preamble
+
+The GNU Affero General Public License is a free, copyleft license for
+software and other kinds of works, specifically designed to ensure
+cooperation with the community in the case of network server software.
+
+For developers' and lawyers' understanding, the AGPL adds one
+requirement to the GNU GPL: when a modified version is used to provide a
+service over a network, the source code of the modified version must be
+made available.
+
+TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+0. Definitions.
+
+"This License" refers to version 3 of the GNU Affero General Public
+License, and the "GNU AGPL" refers to version 3 of the GNU Affero
+General Public License.
+
+"The Library" refers to a copyright work governed by this License,
+other than an Application or a Combined Work as defined below.
+
+An "Application" is any work that makes use of an interface provided
+by the Library, but which is not otherwise based on the Library.
+Defining a subclass of a class defined by the Library is deemed a mode
+of using an interface provided by the Library.
+
+A "Combined Work" is a work produced by the Library or a derivative of
+the Library, as made by compiling the Library ("with" the Library) or
+linking it ("with" other works). The "Corresponding Source" for a
+Combined Work means either the entire Corresponding Source for the
+Combined Work, or the source code and any interface definition files
+required to generate executable versions of the Combined Work.
+
+"Conveying" means any act of making available for the public, by
+distribution or public performance, of a work or material subject to
+the terms of this License.
+
+"Information about the source" means the source code and any
+modifications made to the source code.
+
+"Secondary License" means the GNU General Public License version 3 or
+later, as published by the Free Software Foundation, and any
+additional license not covered by this License.
+
+1. Source Code.
+
+The "source code" for a work is the preferred form of the work for
+making modifications to it. "Object code" means any non-source form
+of a work.
+
+A "Standard Interface" means an interface that either is an official
+standard defined by a recognized standards body, or, in the case of
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
+
+The "Corresponding Source" for a work in object code form means all
+the source code needed to generate, install, and run the object code
+and to modify the work, including scripts to control those activities.
+However, it does not include the work's System Libraries, or
+general-purpose tools or generally available free programs which are
+used unmodified in performing those activities but which are not part
+of the work.
+
+The Corresponding Source may include source code for work covered by
+the terms of this License, provided that the source code is licensed
+under this License or with permission from the copyright holder.
+
+2. Conveying Modifications.
+
+Conveying under Section 2 means that a work based on the Library, or
+the Library itself, is combined with other works in order to produce a
+Modified Work. A "Modified Work" is any work that contains the Library
+or a portion of it, whether copied verbatim, or with modifications
+and/or translated into another language.
+
+The "Corresponding Source" for a Modified Work means the source code
+and any interface definition files required to generate executable
+versions of the Modified Work.
+
+3. Conveying Non-Source Forms.
+
+You may convey a work in object code form under the terms of Sections
+2 and 3, provided that you also convey the Corresponding Source in a
+form as required by this License, in one of the following ways:
+
+  a) Convey the object code in, or embodied in, a physical product
+     (including a physical distribution medium), accompanied by the
+     Corresponding Source fixed on a durable physical medium
+     customarily used for software interchange.
+
+  b) Convey the object code in, or embodied in, a physical product
+     (including a physical distribution medium), accompanied by a
+     written offer, valid for at least three years and valid for as
+     long as you offer spare parts or customer support for that product
+     model, to give anyone who possesses the object code either (1) a
+     copy of the Corresponding Source for all the software in the
+     product that is covered by this License, and (2) access to the
+     Corresponding Source from a network server at no charge.
+
+  c) Convey the object code by offering access from a designated place
+     (gratis or for a charge), and offer equivalent access to the
+     Corresponding Source in the same way through the same place at no
+     charge. If you convey the object code by offering access from a
+     designated place, you must also offer equivalent access to the
+     Corresponding Source from the same place.
+
+  d) Convey the object code by offering access from a designated place
+     (gratis or for a charge), and offer equivalent access to the
+     Corresponding Source from a network server at no charge. If you
+     convey the object code by offering access from a designated place,
+     you must also offer equivalent access to the Corresponding Source
+     in the same way through the same place at no charge.
+
+4. Inability to Comply with License Conditions.
+
+If it is impossible for you to comply with any of the terms of this
+License with respect to some or all of the object code due to statute,
+judicial order, or regulation then you must not convey the object code
+in such a manner, and you must provide a written offer, valid for at
+least three years, to give anyone who possesses the object code either
+(1) a copy of the Corresponding Source for all the software in the
+product that is covered by this License, and (2) access to the
+Corresponding Source from a network server at no charge.
+
+5. Termination.
+
+Notwithstanding any other provisions of this License, you have
+permission to link or combine any covered work with a work licensed
+under the terms of this License and to convey the resulting work.
+The terms of this License will continue to apply to the part which
+is the covered work, but the work with which it is combined will
+remain governed by this License.
+
+6. Non-Free Secondary Licenses.
+
+If, as a consequence of a court judgment or allegation of patent
+infringement or for any other reason (not limited to patent issues),
+conditions are imposed on you (whether by court order, agreement or
+otherwise) that contradict the conditions of this License, they do not
+excuse you from the conditions of this License. If you cannot convey a
+covered work so as to satisfy simultaneously your obligations under this
+License and any other pertinent obligations, then as a consequence you
+may not convey it at all. For example, if a patent license would not
+permit royalty-free redistribution of the Library by all those who
+receive copies directly or indirectly through you, then the only way
+you could satisfy both it and this License would be to refrain entirely
+from distribution of the Library.
+
+7. Redistribution.
+
+You may convey copies of the Library (modified or unmodified) provided
+that you also meet all of these conditions:
+
+  a) You must give any other recipients of the Library or a Modified
+     Work a copy of this License; and
+
+  b) You must cause any modified files to carry prominent notices
+     stating that you changed the files; and
+
+  c) You must retain, in the source form of any Modified Work that you
+     convey, all copyright, patent, trademark, and attribution notices
+     from the source form of the Library; and
+
+  d) You must give all recipients of the Library a copy of this
+     License along with the Corresponding Source; and
+
+  e) You must make sure that all the terms of this License are
+     fulfilled for the Library and all covered works.
+
+8. Acceptance.
+
+Notwithstanding any other provision of this License, you accept the
+license if you modify or link the Library in a manner that, under
+applicable copyright law, requires permission from the copyright
+holder to do so.
+
+9. Termination.
+
+Your rights under this License terminate automatically if you fail to
+comply with any of its terms. However, if you cease all violation of
+this License, then your license from a particular copyright holder is
+reinstated (a) provisionally, unless and until the copyright holder
+explicitly and finally terminates your license, and (b) permanently,
+if the copyright holder fails to notify you of the violation by some
+reasonable means prior to 60 days after you have come back into
+compliance. Moreover, your license from a particular copyright holder
+is reinstated permanently if the copyright holder notifies you of the
+violation by some reasonable means, this is the first time you have
+received notice of violation of this License (for any work) from that
+copyright holder, and you cure the violation prior to 30 days after
+your receipt of the notice.
+
+Termination of your rights under this License does not terminate the
+licenses of parties who have received copies or rights from you under
+this License. If your rights have been terminated and not permanently
+reinstated, you do not qualify to receive new licenses for the same
+subject matter under Section 10.
+
+10. Acceptance.
+
+Notwithstanding any other provision of this License, you accept the
+license if you modify or link the Library in a manner that, under
+applicable copyright law, requires permission from the copyright
+holder to do so.
+
+11. NO WARRANTY.
+
+12. LIMITATION OF LIABILITY.
+
+13. REVISIONS OF THE GNU AGPL.
+
+14. CONTACT INFORMATION.
+
+-----------------------------------------------------------------------
+
+NO WARRANTY
+
+  BECAUSE THE LIBRARY IS LICENSED FREE OF CHARGE, THERE IS NO
+WARRANTY FOR THE LIBRARY, TO THE EXTENT PERMITTED BY APPLICABLE LAW.
+EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR
+OTHER PARTIES PROVIDE THE LIBRARY "AS IS" WITHOUT WARRANTY OF ANY
+KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE
+LIBRARY IS WITH YOU. SHOULD THE LIBRARY PROVE DEFECTIVE, YOU ASSUME
+THE COST OF ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR
+CONVEYS THE LIBRARY AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES,
+INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES
+ARISING OUT OF THE USE OR INABILITY TO USE THE LIBRARY (INCLUDING BUT
+NOT LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR LOSSES
+SUSTAINED BY YOU OR THIRD PARTIES OR A FAILURE OF THE LIBRARY TO
+OPERATE WITH ANY OTHER SOFTWARE), EVEN IF SUCH HOLDER OR OTHER PARTY
+HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+-----------------------------------------------------------------------
+
+END OF TERMS AND CONDITIONS
