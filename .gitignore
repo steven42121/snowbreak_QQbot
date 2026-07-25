@@ -1,0 +1,17 @@
+# AstrBot
+AstrBot/
+
+# NapCat.Shell (third-party)
+NapCat.Shell/node_modules/
+NapCat.Shell/logs/
+NapCat.Shell/cache/
+NapCat.Shell/native/
+NapCat.Shell/worker/
+NapCat.Shell/static/
+
+# Zip files
+*.zip
+
+# OS files
+Thumbs.db
+.DS_Store
