@@ -18,9 +18,13 @@ from astrbot.api import logger, AstrBotConfig
 import astrbot.api.message_components as Comp
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-from .group_management import GroupManagement
-from .verify import UIDVerifier
-from .content_moderation import ContentModerator
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+
+from group_management import GroupManagement
+from verify import UIDVerifier
+from content_moderation import ContentModerator
 
 
 class GroupUtilsPlugin(Star):
@@ -274,10 +278,20 @@ download:
         # 群管理：检测进群事件
         if self.enable_group_management:
             raw = event.message_obj.raw_message
-            if raw and raw.get("post_type") == "notice":
-                notice_type = raw.get("notice_type")
-                if notice_type == "group_increase":
-                    await self._on_member_increase(event)
+            if raw is not None:
+                # 兼容 aiocqhttp (dict) 和 qq_official (object)
+                if isinstance(raw, dict):
+                    post_type = raw.get("post_type")
+                    notice_type = raw.get("notice_type")
+                    user_id = raw.get("user_id")
+                    group_id = raw.get("group_id")
+                else:
+                    post_type = getattr(raw, "post_type", None)
+                    notice_type = getattr(raw, "notice_type", None)
+                    user_id = getattr(raw, "user_id", None)
+                    group_id = getattr(raw, "group_id", None)
+                if post_type == "notice" and notice_type == "group_increase":
+                    await self._on_member_increase(event, user_id, group_id)
 
     @filter.command("addfilter")
     async def add_filter_word(self, event: AstrMessageEvent):
@@ -560,14 +574,13 @@ download:
             else:
                 yield event.plain_result("检测到敏感内容，请注意群规")
 
-    async def _on_member_increase(self, event: AstrMessageEvent):
+    async def _on_member_increase(self, event: AstrMessageEvent, user_id, group_id):
         """处理新成员进群事件"""
         if not self.enable_uid_verify:
             return
 
-        raw = event.message_obj.raw_message
-        user_id = str(raw.get("user_id"))
-        group_id = str(raw.get("group_id"))
+        user_id = str(user_id)
+        group_id = str(group_id)
 
         # 禁言新人
         await self.group_management.mute_user(event.platform, group_id, int(user_id), 0)
