@@ -1,1 +1,1 @@
-# snowbreak_QQbot
+# 尘白禁区QQ机器人
