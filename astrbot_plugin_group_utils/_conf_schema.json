@@ -1,0 +1,26 @@
+{
+  "enable_filter": {
+    "description": "启用社区内容过滤",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后将自动检测并过滤群内的不当内容"
+  },
+  "blacklist_keywords": {
+    "description": "黑名单关键词列表",
+    "type": "list",
+    "default": ["黑子", "串子", "反串", "带节奏", "引战", "ky", "脑残", "智障", "白痴", "废物", "垃圾游戏"],
+    "hint": "包含这些关键词的消息将被过滤"
+  },
+  "enable_schedule": {
+    "description": "启用定时提醒",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后将按照设定的时间自动发送提醒消息"
+  },
+  "jm_download_dir": {
+    "description": "JM漫画下载保存目录",
+    "type": "string",
+    "default": "",
+    "hint": "留空则使用默认目录（插件data目录下的jm_downloads）"
+  }
+}
