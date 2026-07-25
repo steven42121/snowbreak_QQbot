@@ -46,5 +46,17 @@
     "type": "list",
     "default": ["黄", "色", "代", "练", "外挂", "代打", "卖号", "QQ群", "加群"],
     "hint": "包含这些关键词的消息将触发AI二次判断"
+  },
+  "enable_welcome": {
+    "description": "启用进群欢迎消息",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后新成员进群会收到欢迎消息"
+  },
+  "welcome_message": {
+    "description": "进群欢迎消息",
+    "type": "text",
+    "default": "欢迎新成员！\n请发送UID截图进行验证（游戏内个人资料截图）\n验证通过后将自动解除禁言",
+    "hint": "支持 {member} 和 {group} 占位符"
   }
 }

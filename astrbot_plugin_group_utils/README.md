@@ -63,3 +63,11 @@ AstrBot 尘白禁区群聊助手，包含定时提醒、JM漫画下载、社区�
 /unlock 123456     # 解除用户123456的禁言
 /violations        # 查看违规记录
 ```
+
+## 致谢
+
+群管理进退事件桥功能基于 [astrbot_plugin_qq_group_notice](https://github.com/yun474/astrbot_plugin_qq_group_notice) (by 云云, MIT License)。
+
+## 许可证
+
+MIT License - 详见 [LICENSE](LICENSE) 文件
