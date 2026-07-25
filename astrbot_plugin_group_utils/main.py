@@ -272,18 +272,8 @@ download:
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def content_filter(self, event: AstrMessageEvent):
         """社区内容过滤器 + 群管理"""
-        if not self.config.get("enable_filter", True):
-            return
-        message_str = event.message_str
-        if not message_str:
-            return
-        for keyword in self.blacklist_keywords:
-            if keyword in message_str:
-                yield event.plain_result("检测到不当内容，已被过滤")
-                event.stop_event()
-                return
 
-        # 群管理：检测进群事件
+        # 优先检测进群事件（进群事件没有message_str）
         if self.enable_group_management:
             try:
                 raw = event.message_obj.raw_message
@@ -301,8 +291,20 @@ download:
                         group_id = getattr(raw, "group_id", None)
                     if post_type == "notice" and notice_type == "group_increase" and user_id and group_id:
                         await self._on_member_increase(event, user_id, group_id)
+                        return
             except Exception as e:
                 logger.error(f"处理进群事件出错: {e}")
+
+        if not self.config.get("enable_filter", True):
+            return
+        message_str = event.message_str
+        if not message_str:
+            return
+        for keyword in self.blacklist_keywords:
+            if keyword in message_str:
+                yield event.plain_result("检测到不当内容，已被过滤")
+                event.stop_event()
+                return
 
     @filter.command("addfilter")
     async def add_filter_word(self, event: AstrMessageEvent):
