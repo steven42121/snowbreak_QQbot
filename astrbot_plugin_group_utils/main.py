@@ -459,7 +459,7 @@ download:
         group_id = event.message_obj.group_id
 
         # 检查权限
-        if not self._is_admin(event.platform, group_id, event.message_obj.sender.id):
+        if not self._is_admin(event.platform, group_id, event.message_obj.sender.user_id):
             yield event.plain_result("只有管理员可以执行此操作")
             return
 
@@ -496,7 +496,7 @@ download:
             return
 
         group_id = event.message_obj.group_id
-        user_id = event.message_obj.sender.id
+        user_id = event.message_obj.sender.user_id
 
         # 检查是否已验证
         if self.group_management.is_verified(group_id, user_id):
@@ -554,7 +554,7 @@ download:
 
         if not result["safe"]:
             group_id = event.message_obj.group_id
-            user_id = event.message_obj.sender.id
+            user_id = event.message_obj.sender.user_id
 
             # 记录违规
             self.group_management.record_violation(group_id, user_id, result["reason"])
