@@ -3,6 +3,7 @@
 - 关键词匹配
 - AI二次判断
 """
+import json
 import re
 from typing import Optional
 from astrbot.api import logger
@@ -21,22 +22,31 @@ class ContentModerator:
         检查内容
         返回: {"safe": bool, "reason": str}
         """
+        if not text or not keywords:
+            return {"safe": True, "reason": "无违规内容"}
+
         # 第一层：关键词匹配
         for keyword in keywords:
             if keyword in text:
                 # 第二层：AI判断
                 ai_result = await self._ai_judge(text, keyword)
                 if ai_result is not None:
-                    if ai_result["is_violation"]:
+                    if ai_result.get("is_violation", False):
                         return {
                             "safe": False,
-                            "reason": f"AI判断违规：{ai_result['reason']}"
+                            "reason": f"AI判断违规：{ai_result.get('reason', '未知原因')}"
                         }
                     else:
                         return {
                             "safe": True,
-                            "reason": f"AI判断正常：{ai_result['reason']}"
+                            "reason": f"AI判断正常：{ai_result.get('reason', '正常内容')}"
                         }
+                else:
+                    # AI判断失败，默认安全（避免误封）
+                    return {
+                        "safe": True,
+                        "reason": "AI判断跳过，默认正常"
+                    }
 
         return {"safe": True, "reason": "无违规内容"}
 
@@ -63,16 +73,18 @@ class ContentModerator:
 
             response = await self._llm_provider.text_chat(
                 prompt=prompt,
-                system_prompt="你是内容审核助手，请严格判断内容是否违规。"
+                system_prompt="你是内容审核助手，请严格判断内容是否违规。只返回JSON格式结果。"
             )
 
             # 解析JSON
-            import json
-            import re
-            json_match = re.search(r'\{[^{}]+\}', str(response))
+            response_str = str(response) if response else ""
+            json_match = re.search(r'\{[^{}]+\}', response_str)
             if json_match:
-                result = json.loads(json_match.group())
-                return result
+                try:
+                    result = json.loads(json_match.group())
+                    return result
+                except json.JSONDecodeError as e:
+                    logger.error(f"解析AI返回JSON失败: {e}")
 
         except Exception as e:
             logger.error(f"AI判断失败: {e}")

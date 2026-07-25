@@ -19,7 +19,6 @@ import astrbot.api.message_components as Comp
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
 import sys
-import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from group_management import GroupManagement
@@ -64,14 +63,14 @@ class GroupUtilsPlugin(Star):
             {"day": -1, "hour": 22, "minute": 55, "msg": "【睡觉提醒】快11点了，群主喊你睡觉啦！早点休息～"},
         ]
 
-    async def on_load(self):
-        logger.info("群聊工具集插件已加载")
-        self.scheduler_task = asyncio.create_task(self._scheduler_loop())
-
-        # 初始化群管理模块
+        # 群管理模块（在__init__中初始化，确保事件处理时可用）
         self.group_management = GroupManagement()
         self.uid_verifier = UIDVerifier()
         self.content_moderator = ContentModerator()
+
+    async def on_load(self):
+        logger.info("尘白禁区QQ机器人插件已加载")
+        self.scheduler_task = asyncio.create_task(self._scheduler_loop())
 
         # 尝试设置LLM提供者
         try:
@@ -142,7 +141,6 @@ class GroupUtilsPlugin(Star):
         try:
             pdf_path = await self._download_comic(comic_id)
             if pdf_path and pdf_path.exists():
-                # 发送PDF文件到群
                 yield event.plain_result(f"漫画 {comic_id} 下载完成！")
                 yield event.file_result(str(pdf_path), f"{comic_id}.pdf")
             else:
@@ -155,7 +153,7 @@ class GroupUtilsPlugin(Star):
         try:
             from jmcomic import download_album, create_option_by_file, JmcomicException
         except ImportError:
-            logger.error("jmcomic库未安装")
+            logger.error("jmcomic库未安装，请运行: pip install jmcomic")
             return None
 
         # 创建配置
@@ -170,8 +168,12 @@ download:
   overwrite: false
   timeout: 60
 """
-        with open(config_path, "w", encoding="utf-8") as f:
-            f.write(config_content)
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                f.write(config_content)
+        except Exception as e:
+            logger.error(f"创建jm配置文件失败: {e}")
+            return None
 
         try:
             opt = create_option_by_file(str(config_path))
@@ -197,9 +199,6 @@ download:
 
             return None
 
-        except JmcomicException as e:
-            logger.error(f"下载漫画 {comic_id} 失败: {e}")
-            return None
         except Exception as e:
             logger.error(f"下载漫画 {comic_id} 出错: {e}")
             return None
@@ -238,6 +237,9 @@ download:
                 save_all=True,
                 append_images=pil_images[1:] if len(pil_images) > 1 else []
             )
+            # 关闭图片释放内存
+            for img in pil_images:
+                img.close()
             return True
         except Exception as e:
             logger.error(f"生成PDF失败: {e}")
@@ -246,15 +248,21 @@ download:
     def _save_used_id(self, comic_id: int):
         ids = set()
         if self.used_ids_file.exists():
-            with open(self.used_ids_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.isdigit():
-                        ids.add(int(line))
+            try:
+                with open(self.used_ids_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.isdigit():
+                            ids.add(int(line))
+            except Exception as e:
+                logger.error(f"读取已使用ID失败: {e}")
         ids.add(comic_id)
-        with open(self.used_ids_file, "w", encoding="utf-8") as f:
-            for i in sorted(ids):
-                f.write(f"{i}\n")
+        try:
+            with open(self.used_ids_file, "w", encoding="utf-8") as f:
+                for i in sorted(ids):
+                    f.write(f"{i}\n")
+        except Exception as e:
+            logger.error(f"保存已使用ID失败: {e}")
 
     @filter.command("jmhelp")
     async def jm_help(self, event: AstrMessageEvent):
@@ -277,21 +285,24 @@ download:
 
         # 群管理：检测进群事件
         if self.enable_group_management:
-            raw = event.message_obj.raw_message
-            if raw is not None:
-                # 兼容 aiocqhttp (dict) 和 qq_official (object)
-                if isinstance(raw, dict):
-                    post_type = raw.get("post_type")
-                    notice_type = raw.get("notice_type")
-                    user_id = raw.get("user_id")
-                    group_id = raw.get("group_id")
-                else:
-                    post_type = getattr(raw, "post_type", None)
-                    notice_type = getattr(raw, "notice_type", None)
-                    user_id = getattr(raw, "user_id", None)
-                    group_id = getattr(raw, "group_id", None)
-                if post_type == "notice" and notice_type == "group_increase":
-                    await self._on_member_increase(event, user_id, group_id)
+            try:
+                raw = event.message_obj.raw_message
+                if raw is not None:
+                    # 兼容 aiocqhttp (dict) 和 qq_official (object)
+                    if isinstance(raw, dict):
+                        post_type = raw.get("post_type")
+                        notice_type = raw.get("notice_type")
+                        user_id = raw.get("user_id")
+                        group_id = raw.get("group_id")
+                    else:
+                        post_type = getattr(raw, "post_type", None)
+                        notice_type = getattr(raw, "notice_type", None)
+                        user_id = getattr(raw, "user_id", None)
+                        group_id = getattr(raw, "group_id", None)
+                    if post_type == "notice" and notice_type == "group_increase" and user_id and group_id:
+                        await self._on_member_increase(event, user_id, group_id)
+            except Exception as e:
+                logger.error(f"处理进群事件出错: {e}")
 
     @filter.command("addfilter")
     async def add_filter_word(self, event: AstrMessageEvent):
@@ -336,17 +347,19 @@ download:
     @filter.command("helpgroup")
     async def group_help(self, event: AstrMessageEvent):
         """帮助"""
-        # 读取README作为帮助内容
         readme_path = Path(__file__).parent / "README.md"
         if readme_path.exists():
-            content = readme_path.read_text(encoding="utf-8")
-            # 去掉markdown格式，保留纯文本
-            lines = []
-            for line in content.split("\n"):
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    lines.append(line)
-            yield event.plain_result("\n".join(lines[:50]))  # 限制50行
+            try:
+                content = readme_path.read_text(encoding="utf-8")
+                lines = []
+                for line in content.split("\n"):
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        lines.append(line)
+                yield event.plain_result("\n".join(lines[:50]))
+            except Exception as e:
+                logger.error(f"读取README失败: {e}")
+                yield event.plain_result("帮助文档读取失败")
         else:
             yield event.plain_result(
                 "【尘白禁区QQ机器人】\n"
@@ -380,10 +393,7 @@ download:
 
     @filter.command("addtask")
     async def add_task(self, event: AstrMessageEvent):
-        """添加定时任务
-        用法：/addtask <周几/每天> <HH:MM> <内容>
-        周几：周一~周日 或 0~6
-        """
+        """添加定时任务"""
         parts = event.message_str.strip().split(maxsplit=3)
         if len(parts) < 4:
             yield event.plain_result("用法：/addtask <周几/每天> <HH:MM> <内容>\n例如：/addtask 周三 09:30 提醒开会")
@@ -455,18 +465,24 @@ download:
             yield event.plain_result("用法：/unlock <QQ号>")
             return
 
-        user_id = int(parts[1])
+        try:
+            target_user_id = int(parts[1])
+        except ValueError:
+            yield event.plain_result("QQ号必须是数字")
+            return
+
         group_id = event.message_obj.group_id
 
         # 检查权限
-        if not self._is_admin(event.platform, group_id, event.message_obj.sender.user_id):
+        is_admin = await self._is_admin(event.platform, group_id, event.message_obj.sender.user_id)
+        if not is_admin:
             yield event.plain_result("只有管理员可以执行此操作")
             return
 
-        success = await self.group_management.unmute_user(event.platform, group_id, user_id)
+        success = await self.group_management.unmute_user(event.platform, group_id, target_user_id)
         if success:
-            self.group_management.mark_verified(group_id, user_id)
-            yield event.plain_result(f"已解除用户 {user_id} 的禁言")
+            self.group_management.mark_verified(group_id, target_user_id)
+            yield event.plain_result(f"已解除用户 {target_user_id} 的禁言")
         else:
             yield event.plain_result("解除禁言失败")
 
@@ -481,13 +497,18 @@ download:
             return
 
         lines = ["【违规记录】"]
+        found = False
         for key, data in violations.items():
             if key.startswith(f"{group_id}:"):
                 user_id = key.split(":")[1]
                 count = data["count"]
                 lines.append(f"QQ {user_id}: {count}次违规")
+                found = True
 
-        yield event.plain_result("\n".join(lines))
+        if not found:
+            yield event.plain_result("当前没有违规记录")
+        else:
+            yield event.plain_result("\n".join(lines))
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def screenshot_verify(self, event: AstrMessageEvent):
@@ -511,19 +532,21 @@ download:
             if hasattr(comp, 'url') and comp.url:
                 # OCR识别UID
                 text = await self.uid_verifier.recognize_image(comp.url)
+                if not text:
+                    yield event.plain_result("OCR识别失败，请重新截图")
+                    return
+
                 uid = self.uid_verifier.extract_uid(text)
 
                 if uid:
                     result = self.uid_verifier.validate_uid(uid)
 
                     if result["type"] == "normal":
-                        # 解除禁言
                         await self.group_management.unmute_user(event.platform, group_id, user_id)
                         self.group_management.mark_verified(group_id, user_id)
                         yield event.plain_result(f"UID {uid} 验证通过，已解除禁言")
 
                     elif result["type"] == "new_account":
-                        # 标记待审核
                         self.group_management.mark_pending_review(group_id, user_id, uid)
                         yield event.plain_result(
                             f"UID {uid} 验证通过，但这是新号（UID 400-1000万）\n"
@@ -533,9 +556,10 @@ download:
                     else:
                         yield event.plain_result("UID无效，新注册QQ号需联系管理员")
 
-                    break
+                    return
                 else:
                     yield event.plain_result("未识别到有效UID，请重新截图")
+                    return
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def content_moderation(self, event: AstrMessageEvent):
@@ -543,14 +567,19 @@ download:
         if not self.enable_group_management or not self.enable_content_moderation:
             return
 
+        # 跳过命令消息
         message_str = event.message_str
-        if not message_str:
+        if not message_str or message_str.startswith("/"):
             return
 
-        result = await self.content_moderator.check_content(
-            message_str,
-            self.moderation_keywords
-        )
+        try:
+            result = await self.content_moderator.check_content(
+                message_str,
+                self.moderation_keywords
+            )
+        except Exception as e:
+            logger.error(f"内容检测出错: {e}")
+            return
 
         if not result["safe"]:
             group_id = event.message_obj.group_id
@@ -583,25 +612,26 @@ download:
         group_id = str(group_id)
 
         # 禁言新人
-        await self.group_management.mute_user(event.platform, group_id, int(user_id), 0)
-        await event.send(event.plain_result(
-            f"欢迎新成员！\n"
-            "请发送UID截图进行验证（游戏内个人资料截图）\n"
-            "验证通过后将自动解除禁言"
-        ))
+        success = await self.group_management.mute_user(event.platform, group_id, user_id, 0)
+        if success:
+            await event.send(event.plain_result(
+                "欢迎新成员！\n"
+                "请发送UID截图进行验证（游戏内个人资料截图）\n"
+                "验证通过后将自动解除禁言"
+            ))
 
-    def _is_admin(self, platform, group_id: int, user_id: int) -> bool:
-        """检查是否为管理员"""
+    async def _is_admin(self, platform, group_id, user_id) -> bool:
+        """检查是否为管理员（异步）"""
         try:
             client = platform.get_client()
-            member_list = asyncio.run_coroutine_threadsafe(
-                client.api.call_action('get_group_member_list', group_id=group_id),
-                asyncio.get_event_loop()
-            ).result(timeout=10)
+            member_list = await client.api.call_action(
+                'get_group_member_list',
+                group_id=int(group_id)
+            )
 
             for member in member_list:
-                if member['user_id'] == user_id:
-                    return member['role'] in ['admin', 'owner']
+                if str(member.get('user_id', '')) == str(user_id):
+                    return member.get('role', '') in ['admin', 'owner']
         except Exception as e:
             logger.error(f"检查管理员权限失败: {e}")
         return False

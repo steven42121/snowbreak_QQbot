@@ -15,25 +15,35 @@ from astrbot.api import logger
 class UIDVerifier:
     def __init__(self):
         self._ocr_engine = None
+        self._ocr_available = None
 
     def _get_ocr(self):
         """懒加载OCR引擎"""
+        if self._ocr_available is False:
+            return None
+
         if self._ocr_engine is None:
             try:
                 from winocr import ocr
                 self._ocr_engine = ocr
+                self._ocr_available = True
                 logger.info("Windows OCR引擎已加载")
             except ImportError:
-                logger.warning("winocr未安装，尝试安装...")
-                import subprocess
-                subprocess.run(["pip", "install", "winocr"], capture_output=True)
-                from winocr import ocr
-                self._ocr_engine = ocr
-                logger.info("winocr已安装并加载")
+                self._ocr_available = False
+                logger.warning("winocr未安装，OCR功能不可用。请运行: pip install winocr")
+                return None
+            except Exception as e:
+                self._ocr_available = False
+                logger.error(f"加载winocr失败: {e}")
+                return None
         return self._ocr_engine
 
     async def recognize_image(self, image_url: str) -> str:
         """从图片URL识别文字"""
+        ocr_func = self._get_ocr()
+        if ocr_func is None:
+            return ""
+
         try:
             # 下载图片到临时文件
             async with httpx.AsyncClient() as client:
@@ -45,28 +55,40 @@ class UIDVerifier:
                 f.write(resp.content)
                 temp_path = f.name
 
-            # Windows OCR识别
-            ocr_func = self._get_ocr()
-            result = ocr_func(temp_path)
+            try:
+                # Windows OCR识别
+                result = ocr_func(temp_path)
 
-            # 清理临时文件
-            Path(temp_path).unlink(missing_ok=True)
+                # 合并识别结果
+                if hasattr(result, 'lines'):
+                    text = "\n".join([line.text for line in result.lines])
+                else:
+                    text = str(result)
 
-            # 合并识别结果
-            if hasattr(result, 'lines'):
-                text = "\n".join([line.text for line in result.lines])
-            else:
-                text = str(result)
+                logger.info(f"OCR识别结果: {text[:200]}...")
+                return text
+            finally:
+                # 清理临时文件
+                try:
+                    Path(temp_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
 
-            logger.info(f"OCR识别结果: {text[:200]}...")
-            return text
-
+        except httpx.HTTPStatusError as e:
+            logger.error(f"下载图片失败: HTTP {e.response.status_code}")
+            return ""
+        except httpx.RequestError as e:
+            logger.error(f"下载图片网络错误: {e}")
+            return ""
         except Exception as e:
             logger.error(f"OCR识别失败: {e}")
             return ""
 
     def extract_uid(self, text: str) -> Optional[int]:
         """从OCR文本中提取UID"""
+        if not text:
+            return None
+
         # 匹配UID格式: 7-10位数字
         patterns = [
             r'UID[：:\s]*(\d{7,10})',
@@ -78,10 +100,13 @@ class UIDVerifier:
         for pattern in patterns:
             match = re.search(pattern, text)
             if match:
-                uid = int(match.group(1))
-                # 验证UID范围
-                if 10000000 <= uid <= 9999999999:
-                    return uid
+                try:
+                    uid = int(match.group(1))
+                    # 验证UID范围
+                    if 10000000 <= uid <= 9999999999:
+                        return uid
+                except (ValueError, IndexError):
+                    continue
 
         return None
 
