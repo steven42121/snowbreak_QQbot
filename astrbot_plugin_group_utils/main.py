@@ -87,8 +87,20 @@ class GroupUtilsPlugin(Star):
         except Exception as e:
             logger.warning(f"设置LLM提供者失败: {e}")
 
-        # 安装 botpy 补丁
-        await self._install_bridge()
+        # 安装 botpy 补丁（类方法，只需安装一次）
+        self._install_parser_patch()
+
+    @filter.on_platform_loaded()
+    async def on_platform_loaded(self):
+        """平台加载后绑定"""
+        logger.info("[进群禁言] 平台加载完成，开始绑定")
+        await self._bind_platforms()
+
+    @filter.on_astrbot_loaded()
+    async def on_astrbot_loaded(self):
+        """AstrBot加载后绑定"""
+        logger.info("[进群禁言] AstrBot加载完成，开始绑定")
+        await self._bind_platforms()
 
     async def terminate(self):
         if self.scheduler_task:
@@ -97,27 +109,24 @@ class GroupUtilsPlugin(Star):
 
     # ==================== botpy 进群事件桥 ====================
 
-    async def _install_bridge(self):
-        """安装 botpy 进群事件补丁"""
+    def _install_parser_patch(self):
+        """安装 botpy 进群事件解析器（类方法，只需安装一次）"""
         try:
             from botpy.connection import ConnectionState
         except ImportError:
             logger.warning("[进群禁言] botpy 未安装，进群禁言功能不可用")
             return
 
-        # 添加 parser
         for event_type in ("GROUP_MEMBER_ADD", "GROUP_MEMBER_REMOVE"):
             attr = f"parse_{event_type.lower()}"
             if not hasattr(ConnectionState, attr):
                 parser = self._make_parser(event_type)
                 setattr(ConnectionState, attr, parser)
                 self._bridge_installed = True
+                logger.info(f"[进群禁言] 已安装解析器: {attr}")
 
         if self._bridge_installed:
             logger.info("[进群禁言] 已安装进群事件解析桥")
-
-        # 绑定平台
-        await self._bind_platforms()
 
     def _make_parser(self, event_type: str):
         """创建事件解析器"""
@@ -185,20 +194,31 @@ class GroupUtilsPlugin(Star):
         """绑定到 QQ 官方平台"""
         manager = getattr(self.context, "platform_manager", None)
         if manager is None:
+            logger.warning("[进群禁言] platform_manager 不存在")
             return
 
         try:
             adapters = list(manager.get_insts())
-        except Exception:
+            logger.info(f"[进群禁言] 找到 {len(adapters)} 个平台实例")
+        except Exception as e:
+            logger.error(f"[进群禁言] 获取平台实例失败: {e}")
             adapters = list(getattr(manager, "platform_insts", ()) or ())
 
         for adapter in adapters:
             platform_name = self._get_platform_name(adapter)
+            logger.info(f"[进群禁言] 检查平台: {platform_name}")
+
             if platform_name not in ("qq_official", "qq_official_webhook"):
+                logger.info(f"[进群禁言] 跳过非QQ官方平台: {platform_name}")
                 continue
 
             client = getattr(adapter, "client", None)
-            if client is None or id(client) in self._bound_clients:
+            if client is None:
+                logger.warning(f"[进群禁言] 平台 {platform_name} 没有 client")
+                continue
+
+            if id(client) in self._bound_clients:
+                logger.info(f"[进群禁言] 平台 {platform_name} 已绑定过")
                 continue
 
             # 启用 GROUP_MEMBER Intent
@@ -208,7 +228,7 @@ class GroupUtilsPlugin(Star):
             self._bind_client(client, adapter)
 
             self._bound_clients.add(id(client))
-            logger.info(f"[进群禁言] 已绑定平台: {platform_name}")
+            logger.info(f"[进群禁言] ✓ 已绑定平台: {platform_name}")
 
     def _enable_intent(self, client, adapter):
         """启用 GROUP_MEMBER Intent"""
@@ -240,11 +260,15 @@ class GroupUtilsPlugin(Star):
 
         for attr, event_type in callbacks.items():
             original = getattr(client, attr, None)
+            logger.info(f"[进群禁言] 绑定回调: {attr}, 原始值: {original}")
 
             async def wrapper(event, _event_type=event_type, _original=original):
+                logger.info(f"[进群禁言] 收到事件: {_event_type}")
                 member_openid = getattr(event, "member_openid", "")
                 group_openid = getattr(event, "group_openid", "")
                 op_member_openid = getattr(event, "op_member_openid", "")
+
+                logger.info(f"[进群禁言] 事件详情: group={group_openid}, member={member_openid}")
 
                 if _event_type == "GROUP_MEMBER_ADD":
                     logger.info(f"[进群禁言] 新成员加入: {member_openid} in {group_openid}")
@@ -253,6 +277,7 @@ class GroupUtilsPlugin(Star):
                         success = await self.group_management.mute_user_by_openid(
                             self._get_platform(), group_openid, member_openid, 0
                         )
+                        logger.info(f"[进群禁言] 禁言结果: {success}")
                         if success:
                             await self._send_verify_prompt(group_openid, member_openid)
 
@@ -264,6 +289,7 @@ class GroupUtilsPlugin(Star):
             setattr(wrapper, "__qq_group_notice_bridge__", True)
             setattr(client, attr, wrapper)
             self._bindings.append((client, attr, original, wrapper))
+            logger.info(f"[进群禁言] ✓ 已绑定回调: {attr}")
 
     async def _uninstall_bridge(self):
         """卸载 botpy 补丁"""
