@@ -8,7 +8,7 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 from PIL import Image
 
@@ -63,10 +63,16 @@ class GroupUtilsPlugin(Star):
             {"day": -1, "hour": 22, "minute": 55, "msg": "【睡觉提醒】快11点了，群主喊你睡觉啦！早点休息～"},
         ]
 
-        # 群管理模块（在__init__中初始化，确保事件处理时可用）
+        # 群管理模块
         self.group_management = GroupManagement()
         self.uid_verifier = UIDVerifier()
         self.content_moderator = ContentModerator()
+
+        # botpy patch 相关
+        self._bridge_installed = False
+        self._bindings: list = []
+        self._intent_patches: list = []
+        self._bound_clients: set = set()
 
     async def on_load(self):
         logger.info("尘白禁区QQ机器人插件已加载")
@@ -81,9 +87,242 @@ class GroupUtilsPlugin(Star):
         except Exception as e:
             logger.warning(f"设置LLM提供者失败: {e}")
 
+        # 安装 botpy 补丁
+        await self._install_bridge()
+
     async def terminate(self):
         if self.scheduler_task:
             self.scheduler_task.cancel()
+        await self._uninstall_bridge()
+
+    # ==================== botpy 进群事件桥 ====================
+
+    async def _install_bridge(self):
+        """安装 botpy 进群事件补丁"""
+        try:
+            from botpy.connection import ConnectionState
+        except ImportError:
+            logger.warning("[进群禁言] botpy 未安装，进群禁言功能不可用")
+            return
+
+        # 添加 parser
+        for event_type in ("GROUP_MEMBER_ADD", "GROUP_MEMBER_REMOVE"):
+            attr = f"parse_{event_type.lower()}"
+            if not hasattr(ConnectionState, attr):
+                parser = self._make_parser(event_type)
+                setattr(ConnectionState, attr, parser)
+                self._bridge_installed = True
+
+        if self._bridge_installed:
+            logger.info("[进群禁言] 已安装进群事件解析桥")
+
+        # 绑定平台
+        await self._bind_platforms()
+
+    def _make_parser(self, event_type: str):
+        """创建事件解析器"""
+        def parser(state, payload):
+            event_id = payload.get("id", "")
+            timestamp = payload.get("timestamp", "")
+            group_openid = payload.get("group_openid", "")
+            member_openid = payload.get("member_openid", "")
+            op_member_openid = payload.get("op_member_openid", "")
+
+            # 异步处理
+            asyncio.create_task(self._handle_member_event(
+                event_type, group_openid, member_openid, op_member_openid
+            ))
+
+        parser.__name__ = f"parse_{event_type.lower()}"
+        parser.__qualname__ = f"ConnectionState.{parser.__name__}"
+        setattr(parser, "__qq_group_notice_bridge__", True)
+        return parser
+
+    async def _handle_member_event(self, event_type: str, group_openid: str, member_openid: str, op_member_openid: str):
+        """处理进群/退群事件"""
+        if event_type == "GROUP_MEMBER_ADD":
+            logger.info(f"[进群禁言] 新成员加入群 {group_openid}: {member_openid}")
+            if self.enable_group_management and self.enable_uid_verify:
+                # 等待一下，让 botpy 完成事件处理
+                await asyncio.sleep(1)
+                # 禁言新人
+                success = await self.group_management.mute_user_by_openid(
+                    self._get_platform(), group_openid, member_openid, 0
+                )
+                if success:
+                    # 发送验证提示
+                    await self._send_verify_prompt(group_openid, member_openid)
+        elif event_type == "GROUP_MEMBER_REMOVE":
+            logger.info(f"[进群禁言] 成员离开群 {group_openid}: {member_openid}")
+
+    async def _send_verify_prompt(self, group_openid: str, member_openid: str):
+        """发送验证提示消息"""
+        try:
+            platform = self._get_platform()
+            if platform is None:
+                return
+
+            client = platform.get_client()
+            api = getattr(client, "api", None)
+            if api is None:
+                return
+
+            content = (
+                "欢迎新成员！\n"
+                "请发送UID截图进行验证（游戏内个人资料截图）\n"
+                "验证通过后将自动解除禁言"
+            )
+
+            await api.post_group_message(
+                group_openid=group_openid,
+                msg_type=0,
+                content=content
+            )
+        except Exception as e:
+            logger.error(f"[进群禁言] 发送验证提示失败: {e}")
+
+    async def _bind_platforms(self):
+        """绑定到 QQ 官方平台"""
+        manager = getattr(self.context, "platform_manager", None)
+        if manager is None:
+            return
+
+        try:
+            adapters = list(manager.get_insts())
+        except Exception:
+            adapters = list(getattr(manager, "platform_insts", ()) or ())
+
+        for adapter in adapters:
+            platform_name = self._get_platform_name(adapter)
+            if platform_name not in ("qq_official", "qq_official_webhook"):
+                continue
+
+            client = getattr(adapter, "client", None)
+            if client is None or id(client) in self._bound_clients:
+                continue
+
+            # 启用 GROUP_MEMBER Intent
+            self._enable_intent(client, adapter)
+
+            # 绑定回调
+            self._bind_client(client, adapter)
+
+            self._bound_clients.add(id(client))
+            logger.info(f"[进群禁言] 已绑定平台: {platform_name}")
+
+    def _enable_intent(self, client, adapter):
+        """启用 GROUP_MEMBER Intent"""
+        platform_name = self._get_platform_name(adapter)
+        if platform_name != "qq_official":
+            return
+
+        intents = getattr(client, "intents", None)
+        if not isinstance(intents, int):
+            return
+
+        GROUP_MEMBER_INTENT = 1 << 24
+        if intents & GROUP_MEMBER_INTENT:
+            return
+
+        client.intents = intents | GROUP_MEMBER_INTENT
+        self._intent_patches.append((client, intents, client.intents))
+        logger.info("[进群禁言] 已启用 GROUP_MEMBER Intents")
+
+        if getattr(client, "_connection", None) is not None:
+            logger.warning("[进群禁言] QQ 连接已建立，请重载平台或重启 AstrBot 使新 Intents 生效")
+
+    def _bind_client(self, client, adapter):
+        """绑定进群回调"""
+        callbacks = {
+            "on_group_member_add": "GROUP_MEMBER_ADD",
+            "on_group_member_remove": "GROUP_MEMBER_REMOVE",
+        }
+
+        for attr, event_type in callbacks.items():
+            original = getattr(client, attr, None)
+
+            async def wrapper(event, _event_type=event_type, _original=original):
+                member_openid = getattr(event, "member_openid", "")
+                group_openid = getattr(event, "group_openid", "")
+                op_member_openid = getattr(event, "op_member_openid", "")
+
+                if _event_type == "GROUP_MEMBER_ADD":
+                    logger.info(f"[进群禁言] 新成员加入: {member_openid} in {group_openid}")
+                    if self.enable_group_management and self.enable_uid_verify:
+                        await asyncio.sleep(1)
+                        success = await self.group_management.mute_user_by_openid(
+                            self._get_platform(), group_openid, member_openid, 0
+                        )
+                        if success:
+                            await self._send_verify_prompt(group_openid, member_openid)
+
+                if _original is not None:
+                    result = _original(event)
+                    if asyncio.iscoroutine(result):
+                        await result
+
+            setattr(wrapper, "__qq_group_notice_bridge__", True)
+            setattr(client, attr, wrapper)
+            self._bindings.append((client, attr, original, wrapper))
+
+    async def _uninstall_bridge(self):
+        """卸载 botpy 补丁"""
+        # 恢复回调
+        for client, attr, original, wrapper in reversed(self._bindings):
+            if getattr(client, attr, None) is wrapper:
+                if original is None:
+                    try:
+                        delattr(client, attr)
+                    except AttributeError:
+                        pass
+                else:
+                    setattr(client, attr, original)
+        self._bindings.clear()
+        self._bound_clients.clear()
+
+        # 恢复 Intent
+        for client, original, patched in self._intent_patches:
+            if getattr(client, "intents", None) == patched:
+                client.intents = original
+        self._intent_patches.clear()
+
+        # 移除 parser
+        try:
+            from botpy.connection import ConnectionState
+            for event_type in ("GROUP_MEMBER_ADD", "GROUP_MEMBER_REMOVE"):
+                attr = f"parse_{event_type.lower()}"
+                current = getattr(ConnectionState, attr, None)
+                if current and getattr(current, "__qq_group_notice_bridge__", False):
+                    delattr(ConnectionState, attr)
+            logger.info("[进群禁言] 已卸载进群事件解析桥")
+        except Exception:
+            pass
+
+    def _get_platform(self):
+        """获取 QQ 官方平台实例"""
+        manager = getattr(self.context, "platform_manager", None)
+        if manager is None:
+            return None
+
+        try:
+            adapters = list(manager.get_insts())
+        except Exception:
+            adapters = list(getattr(manager, "platform_insts", ()) or ())
+
+        for adapter in adapters:
+            platform_name = self._get_platform_name(adapter)
+            if platform_name in ("qq_official", "qq_official_webhook"):
+                return adapter
+        return None
+
+    def _get_platform_name(self, adapter):
+        """获取平台名称"""
+        try:
+            return str(adapter.meta().name)
+        except Exception:
+            return ""
+
+    # ==================== 定时任务 ====================
 
     async def _scheduler_loop(self):
         sent_tasks = set()
@@ -122,6 +361,8 @@ class GroupUtilsPlugin(Star):
             except Exception as e:
                 logger.error(f"发送消息到群 {group_id} 失败: {e}")
 
+    # ==================== JM 漫画下载 ====================
+
     @filter.command("jm")
     async def jm_download(self, event: AstrMessageEvent):
         """JM漫画下载指令"""
@@ -156,7 +397,6 @@ class GroupUtilsPlugin(Star):
             logger.error("jmcomic库未安装，请运行: pip install jmcomic")
             return None
 
-        # 创建配置
         config_path = self.download_dir / "jm_config.yml"
         config_content = f"""
 download:
@@ -182,7 +422,6 @@ download:
 
             await loop.run_in_executor(None, download_album, str(comic_id), opt)
 
-            # 查找下载的文件夹
             comic_folder = None
             for item in self.download_dir.iterdir():
                 if item.is_dir() and item.name.isdigit():
@@ -191,7 +430,6 @@ download:
                             comic_folder = item
 
             if comic_folder:
-                # 生成PDF
                 pdf_path = self.download_dir / f"{comic_id}.pdf"
                 if self._generate_pdf(comic_folder, pdf_path):
                     self._save_used_id(comic_id)
@@ -207,7 +445,6 @@ download:
         return [int(c) if c.isdigit() else c.lower() for c in re.split(r"(\d+)", str(s))]
 
     def _generate_pdf(self, comic_dir: Path, output_path: Path) -> bool:
-        """将图片转换为PDF"""
         imgs = []
         for root, _, files in os.walk(comic_dir):
             for f in files:
@@ -237,7 +474,6 @@ download:
                 save_all=True,
                 append_images=pil_images[1:] if len(pil_images) > 1 else []
             )
-            # 关闭图片释放内存
             for img in pil_images:
                 img.close()
             return True
@@ -266,35 +502,12 @@ download:
 
     @filter.command("jmhelp")
     async def jm_help(self, event: AstrMessageEvent):
-        """JM下载帮助"""
         yield event.plain_result("用法：/jm <漫画ID>\n例如：/jm 12345")
+
+    # ==================== 内容过滤 ====================
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def content_filter(self, event: AstrMessageEvent):
-        """社区内容过滤器 + 群管理"""
-
-        # 优先检测进群事件（进群事件没有message_str）
-        if self.enable_group_management:
-            try:
-                raw = event.message_obj.raw_message
-                if raw is not None:
-                    # 兼容 aiocqhttp (dict) 和 qq_official (object)
-                    if isinstance(raw, dict):
-                        post_type = raw.get("post_type")
-                        notice_type = raw.get("notice_type")
-                        user_id = raw.get("user_id")
-                        group_id = raw.get("group_id")
-                    else:
-                        post_type = getattr(raw, "post_type", None)
-                        notice_type = getattr(raw, "notice_type", None)
-                        user_id = getattr(raw, "user_id", None)
-                        group_id = getattr(raw, "group_id", None)
-                    if post_type == "notice" and notice_type == "group_increase" and user_id and group_id:
-                        await self._on_member_increase(event, user_id, group_id)
-                        return
-            except Exception as e:
-                logger.error(f"处理进群事件出错: {e}")
-
         if not self.config.get("enable_filter", True):
             return
         message_str = event.message_str
@@ -308,7 +521,6 @@ download:
 
     @filter.command("addfilter")
     async def add_filter_word(self, event: AstrMessageEvent):
-        """添加过滤关键词"""
         parts = event.message_str.strip().split(maxsplit=1)
         if len(parts) < 2:
             yield event.plain_result("用法：/addfilter <关键词>")
@@ -324,7 +536,6 @@ download:
 
     @filter.command("delfilter")
     async def del_filter_word(self, event: AstrMessageEvent):
-        """删除过滤关键词"""
         parts = event.message_str.strip().split(maxsplit=1)
         if len(parts) < 2:
             yield event.plain_result("用法：/delfilter <关键词>")
@@ -340,15 +551,15 @@ download:
 
     @filter.command("listfilter")
     async def list_filter_words(self, event: AstrMessageEvent):
-        """列出过滤词"""
         if self.blacklist_keywords:
             yield event.plain_result("过滤词：" + "、".join(self.blacklist_keywords))
         else:
             yield event.plain_result("当前没有过滤词")
 
+    # ==================== 帮助 ====================
+
     @filter.command("helpgroup")
     async def group_help(self, event: AstrMessageEvent):
-        """帮助"""
         readme_path = Path(__file__).parent / "README.md"
         if readme_path.exists():
             try:
@@ -378,9 +589,10 @@ download:
                 "/helpgroup - 本帮助"
             )
 
+    # ==================== 定时任务管理 ====================
+
     @filter.command("listtask")
     async def list_tasks(self, event: AstrMessageEvent):
-        """查看定时任务"""
         if not self.schedule_tasks:
             yield event.plain_result("当前没有定时任务")
             return
@@ -395,7 +607,6 @@ download:
 
     @filter.command("addtask")
     async def add_task(self, event: AstrMessageEvent):
-        """添加定时任务"""
         parts = event.message_str.strip().split(maxsplit=3)
         if len(parts) < 4:
             yield event.plain_result("用法：/addtask <周几/每天> <HH:MM> <内容>\n例如：/addtask 周三 09:30 提醒开会")
@@ -405,7 +616,6 @@ download:
         time_str = parts[2]
         msg = parts[3]
 
-        # 解析周几
         weekdays = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6}
         if day_str == "每天":
             day = -1
@@ -417,7 +627,6 @@ download:
             yield event.plain_result("周几格式错误，请使用：周一~周日、0~6、每天")
             return
 
-        # 解析时间
         try:
             hour, minute = map(int, time_str.split(":"))
             if not (0 <= hour <= 23 and 0 <= minute <= 59):
@@ -426,7 +635,6 @@ download:
             yield event.plain_result("时间格式错误，请使用 HH:MM，如 09:30")
             return
 
-        # 添加任务
         new_task = {"day": day, "hour": hour, "minute": minute, "msg": msg}
         self.schedule_tasks.append(new_task)
         self.config["schedule_tasks"] = self.schedule_tasks
@@ -437,7 +645,6 @@ download:
 
     @filter.command("deltask")
     async def del_task(self, event: AstrMessageEvent):
-        """删除定时任务"""
         parts = event.message_str.strip().split()
         if len(parts) < 2:
             yield event.plain_result("用法：/deltask <编号>\n用 /listtask 查看编号")
@@ -459,9 +666,10 @@ download:
         else:
             yield event.plain_result("编号不存在")
 
+    # ==================== 管理员命令 ====================
+
     @filter.command("unlock")
     async def unlock_user(self, event: AstrMessageEvent):
-        """解除禁言（管理员）"""
         parts = event.message_str.strip().split()
         if len(parts) < 2:
             yield event.plain_result("用法：/unlock <QQ号>")
@@ -475,7 +683,6 @@ download:
 
         group_id = event.message_obj.group_id
 
-        # 检查权限
         is_admin = await self._is_admin(event.platform, group_id, event.message_obj.sender.user_id)
         if not is_admin:
             yield event.plain_result("只有管理员可以执行此操作")
@@ -490,7 +697,6 @@ download:
 
     @filter.command("violations")
     async def show_violations(self, event: AstrMessageEvent):
-        """查看违规记录"""
         group_id = event.message_obj.group_id
         violations = self.group_management.violations
 
@@ -512,27 +718,25 @@ download:
         else:
             yield event.plain_result("\n".join(lines))
 
+    # ==================== 截图验证 ====================
+
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def screenshot_verify(self, event: AstrMessageEvent):
-        """截图验证"""
         if not self.enable_group_management or not self.enable_uid_verify:
             return
 
         group_id = event.message_obj.group_id
         user_id = event.message_obj.sender.user_id
 
-        # 检查是否已验证
         if self.group_management.is_verified(group_id, user_id):
             return
 
-        # 获取消息中的图片
         images = event.message_obj.message
         if not images:
             return
 
         for comp in images:
             if hasattr(comp, 'url') and comp.url:
-                # OCR识别UID
                 text = await self.uid_verifier.recognize_image(comp.url)
                 if not text:
                     yield event.plain_result("OCR识别失败，请重新截图")
@@ -563,13 +767,13 @@ download:
                     yield event.plain_result("未识别到有效UID，请重新截图")
                     return
 
+    # ==================== 敏感内容检测 ====================
+
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def content_moderation(self, event: AstrMessageEvent):
-        """敏感内容检测"""
         if not self.enable_group_management or not self.enable_content_moderation:
             return
 
-        # 跳过命令消息
         message_str = event.message_str
         if not message_str or message_str.startswith("/"):
             return
@@ -587,43 +791,22 @@ download:
             group_id = event.message_obj.group_id
             user_id = event.message_obj.sender.user_id
 
-            # 记录违规
             self.group_management.record_violation(group_id, user_id, result["reason"])
-
-            # 获取违规次数
             count = self.group_management.get_violation_count(group_id, user_id)
 
             if count >= 3:
-                # 永久禁言+踢出
                 await self.group_management.mute_user(event.platform, group_id, user_id, 0)
                 await self.group_management.kick_user(event.platform, group_id, user_id)
                 yield event.plain_result(f"用户 {user_id} 累计违规{count}次，已永久禁言并踢出")
             elif count >= 1:
-                # 全体禁言12小时
                 await self.group_management.global_mute(event.platform, group_id, 43200)
                 yield event.plain_result(f"检测到敏感内容，已全体禁言12小时（违规{count}次）")
             else:
                 yield event.plain_result("检测到敏感内容，请注意群规")
 
-    async def _on_member_increase(self, event: AstrMessageEvent, user_id, group_id):
-        """处理新成员进群事件"""
-        if not self.enable_uid_verify:
-            return
-
-        user_id = str(user_id)
-        group_id = str(group_id)
-
-        # 禁言新人
-        success = await self.group_management.mute_user(event.platform, group_id, user_id, 0)
-        if success:
-            await event.send(event.plain_result(
-                "欢迎新成员！\n"
-                "请发送UID截图进行验证（游戏内个人资料截图）\n"
-                "验证通过后将自动解除禁言"
-            ))
+    # ==================== 工具函数 ====================
 
     async def _is_admin(self, platform, group_id, user_id) -> bool:
-        """检查是否为管理员（异步）"""
         try:
             client = platform.get_client()
             member_list = await client.api.call_action(

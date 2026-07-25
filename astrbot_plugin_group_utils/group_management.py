@@ -7,6 +7,7 @@
 """
 import json
 import asyncio
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Union
@@ -152,6 +153,46 @@ class GroupManagement:
             return True
         except Exception as e:
             logger.error(f"解除禁言失败: {e}")
+            return False
+
+    async def mute_user_by_openid(self, platform, group_openid: str, member_openid: str, duration: int = 0) -> bool:
+        """通过 OpenID 禁言用户（QQ官方机器人）"""
+        try:
+            client = platform.get_client()
+            api = getattr(client, "api", None)
+            if api is None:
+                logger.error("QQ官方 API 不可用")
+                return False
+
+            # QQ官方机器人禁言接口
+            await api.put_group_member_mute(
+                group_openid=group_openid,
+                mute_end_timestamp=str(int(time.time()) + duration) if duration > 0 else "0",
+                member_openid=member_openid
+            )
+            logger.info(f"已禁言用户 {member_openid} 在群 {group_openid}，时长 {duration}秒")
+            return True
+        except Exception as e:
+            logger.error(f"通过OpenID禁言失败: {e}")
+            return False
+
+    async def unmute_user_by_openid(self, platform, group_openid: str, member_openid: str) -> bool:
+        """通过 OpenID 解除禁言（QQ官方机器人）"""
+        try:
+            client = platform.get_client()
+            api = getattr(client, "api", None)
+            if api is None:
+                return False
+
+            await api.put_group_member_mute(
+                group_openid=group_openid,
+                mute_end_timestamp="0",
+                member_openid=member_openid
+            )
+            logger.info(f"已解除禁言用户 {member_openid} 在群 {group_openid}")
+            return True
+        except Exception as e:
+            logger.error(f"通过OpenID解除禁言失败: {e}")
             return False
 
     async def global_mute(self, platform, group_id: Union[str, int], duration: int = 43200) -> bool:
