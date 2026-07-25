@@ -1,14 +1,10 @@
-name: Release
+name: Auto Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      tag:
-        description: '版本号 (例如 v1.0.0)'
-        required: true
 
 jobs:
   release:
@@ -19,19 +15,69 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set tag name
-        id: tag
+      - name: Check for changes
+        id: check
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          # 获取上一个release的commit
+          LAST_RELEASE=$(git tag -l "v*" --sort=-version:refname | head -n1)
+          
+          if [ -z "$LAST_RELEASE" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "commits=0" >> $GITHUB_OUTPUT
           else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            COMMITS=$(git log ${LAST_RELEASE}..HEAD --oneline | wc -l)
+            echo "commits=$COMMITS" >> $GITHUB_OUTPUT
+            if [ "$COMMITS" -gt 3 ]; then
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+            else
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+            fi
           fi
 
-      - name: Create ZIP package
+      - name: Generate version
+        if: steps.check.outputs.has_changes == 'true'
+        id: version
         run: |
-          # 复制需要打包的文件
+          # 获取最新tag
+          LAST_TAG=$(git tag -l "v*" --sort=-version:refname | head -n1)
+          
+          if [ -z "$LAST_TAG" ]; then
+            NEW_TAG="v1.0.0"
+          else
+            # 提取版本号并+1
+            VERSION=${LAST_TAG#v}
+            MAJOR=$(echo $VERSION | cut -d. -f1)
+            MINOR=$(echo $VERSION | cut -d. -f2)
+            PATCH=$(echo $VERSION | cut -d. -f3)
+            NEW_PATCH=$((PATCH + 1))
+            NEW_TAG="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+          fi
+          
+          echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
+          echo "tag_name=$NEW_TAG" >> $GITHUB_OUTPUT
+
+      - name: Get commit list
+        if: steps.check.outputs.has_changes == 'true'
+        id: commits
+        run: |
+          LAST_RELEASE=$(git tag -l "v*" --sort=-version:refname | head -n1)
+          
+          if [ -z "$LAST_RELEASE" ]; then
+            COMMITS=$(git log --oneline -20 | sed 's/^/- /')
+          else
+            COMMITS=$(git log ${LAST_RELEASE}..HEAD --oneline | sed 's/^/- /')
+          fi
+          
+          echo "list<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create ZIP package
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
           mkdir -p release
           cp -r astrbot_plugin_group_utils/ release/
           cp -r 下载jm/ release/
@@ -39,27 +85,27 @@ jobs:
           cp README.md release/
           cp LICENSE release/
           
-          # 创建zip
           cd release
-          zip -r ../snowbreak_QQbot-${{ steps.tag.outputs.tag }}.zip .
+          zip -r ../snowbreak_QQbot-${{ steps.version.outputs.tag }}.zip .
 
       - name: Create Release
+        if: steps.check.outputs.has_changes == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Release ${{ steps.tag.outputs.tag }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
           body: |
-            ## Snowbreak QQ Bot ${{ steps.tag.outputs.tag }}
+            ## Snowbreak QQ Bot ${{ steps.version.outputs.tag }}
             
             ### 更新内容
-            - 在这里添加更新说明
+            ${{ steps.commits.outputs.list }}
             
             ### 下载
-            - `snowbreak_QQbot-${{ steps.tag.outputs.tag }}.zip` - 完整包
+            - `snowbreak_QQbot-${{ steps.version.outputs.tag }}.zip` - 完整包
             
             ### 安装说明
             参考 [README.md](README.md)
           files: |
-            snowbreak_QQbot-${{ steps.tag.outputs.tag }}.zip
+            snowbreak_QQbot-${{ steps.version.outputs.tag }}.zip
           draft: false
           prerelease: false
